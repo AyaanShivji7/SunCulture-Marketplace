@@ -1,0 +1,2192 @@
+'use client';
+
+import React, {
+  useState,
+  useMemo,
+  useRef,
+  useEffect,
+  useCallback,
+  Fragment,
+  ChangeEvent,
+  KeyboardEvent,
+  MouseEvent,
+  FocusEvent,
+} from 'react';
+
+type Region = 'Kenya' | 'Uganda' | 'Tanzania' | 'Rwanda' | 'Ethiopia';
+type ProductType =
+  | 'Vegetables'
+  | 'Grains'
+  | 'Coffee/Tea'
+  | 'Fruit'
+  | 'Spices'
+  | 'Nuts/Seeds';
+type Tag = 'Verified' | 'Organic' | 'Fast Dispatch';
+
+type Product = {
+  id: string;
+  name: string;
+  description: string;
+  longDescription: string;
+  price: number;
+  unit: string;
+  rating: number;
+  numRatings: number;
+  stock: number;
+  tags: Tag[];
+  region: Region;
+  type: ProductType;
+  seller: {
+    name: string;
+    region: Region;
+    verified: boolean;
+  };
+  shippingDays: [number, number];
+  imageColor: string; // placeholder color for images
+};
+
+type SortOption =
+  | 'Relevance'
+  | 'Price: Low→High'
+  | 'Price: High→Low'
+  | 'Rating: High→Low'
+  | 'Shipping: Fastest';
+
+const REGIONS: Region[] = [
+  'Kenya',
+  'Uganda',
+  'Tanzania',
+  'Rwanda',
+  'Ethiopia',
+];
+
+const PRODUCT_TYPES: ProductType[] = [
+  'Vegetables',
+  'Grains',
+  'Coffee/Tea',
+  'Fruit',
+  'Spices',
+  'Nuts/Seeds',
+];
+
+const TAGS: Tag[] = ['Verified', 'Organic', 'Fast Dispatch'];
+
+const RATING_FILTERS: { value: number; label: string }[] = [
+  { value: 0, label: 'Any' },
+  { value: 3, label: '3+' },
+  { value: 4, label: '4+' },
+  { value: 4.5, label: '4.5+' },
+];
+
+const SORT_OPTIONS: SortOption[] = [
+  'Relevance',
+  'Price: Low→High',
+  'Price: High→Low',
+  'Rating: High→Low',
+  'Shipping: Fastest',
+];
+
+const CATEGORIES = ['All', ...PRODUCT_TYPES];
+
+const PAGE_SIZE = 12;
+
+// MOCK DATA GENERATION
+function randomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+function randomOf<T>(arr: T[]) {
+  return arr[randomInt(0, arr.length - 1)];
+}
+function randomFloat(min: number, max: number, decimals: number = 1) {
+  const num = Math.random() * (max - min) + min;
+  return Math.round(num * 10 ** decimals) / 10 ** decimals;
+}
+const SELLER_NAMES = [
+  'Jambo Farms',
+  'Greenwave Co.',
+  'Kijani Traders',
+  'Harvest Hub',
+  'PureField',
+  'Epicure Roots',
+  'AgriKingdom',
+  'Sunrise Citrus',
+  'Ken Growth',
+  'Seed & Sprout',
+  'Tamu Estates',
+  'Wakulima Co.',
+];
+
+const PRODUCT_DATA: Product[] = Array.from({ length: 30 }, (_, i) => {
+  const type = randomOf(PRODUCT_TYPES);
+  const name =
+    [
+      ['Fresh Tomatoes', 'Green Beans', 'Sweet Corn', 'Spinach'],
+      ['Maize Grain', 'Sorghum', 'Millet', 'Brown Rice'],
+      ['Kenya AA Coffee', 'Red Rooibos Tea', 'African Espresso', 'Chai Melange'],
+      ['Mango', 'Pineapple', 'Avocado', 'Passion Fruit'],
+      ['Black Pepper', 'Cardamom', 'Cinnamon', 'Vanilla Pods'],
+      ['Cashew Nuts', 'Sunflower Seeds', 'Macadamia', 'Sesame'],
+    ][PRODUCT_TYPES.indexOf(type) % 6][i % 4];
+  const region = randomOf(REGIONS);
+  const sellerRegion = Math.random() < 0.7 ? region : randomOf(REGIONS);
+  const tags: Tag[] = [
+    ...(Math.random() > 0.7 ? ['Organic'] : []),
+    ...(Math.random() > 0.7 ? ['Verified'] : []),
+    ...(Math.random() > 0.7 ? ['Fast Dispatch'] : []),
+  ];
+  const stock = randomInt(0, 120);
+  const price =
+    type === 'Coffee/Tea'
+      ? randomFloat(8, 30)
+      : type === 'Fruit'
+      ? randomFloat(1.5, 6)
+      : type === 'Vegetables'
+      ? randomFloat(0.6, 5)
+      : type === 'Grains'
+      ? randomFloat(1, 7)
+      : type === 'Spices'
+      ? randomFloat(2.5, 20)
+      : randomFloat(4, 15);
+  const unit =
+    type === 'Spices' ? '/100g' : type === 'Coffee/Tea' ? '/250g' : '/kg';
+  const shippingMin = randomInt(2, 5);
+  const shippingMax = randomInt(shippingMin + 1, shippingMin + 4);
+  return {
+    id: `p${i + 1}`,
+    name,
+    description:
+      {
+        'Vegetables': 'Farm fresh, locally grown produce.',
+        'Grains': 'Premium-quality staple grains.',
+        'Coffee/Tea': 'Aromatic, locally sourced blends.',
+        'Fruit': 'Seasonal, sun-ripened fruit.',
+        'Spices': 'Hand-selected, aromatic spices.',
+        'Nuts/Seeds': 'Crunchy and full of flavor.',
+      }[type],
+    longDescription:
+      `Enjoy sustainable, high-quality ${name} sourced from trusted farmers in ${region}. Perfect for markets, chefs, or home cooks. Locally grown, handled with care. Rich in nutrients and flavor. ${Math.random() > 0.7 ? 'Certified Organic.' : 'Produced using good agricultural practices.'}`,
+    price,
+    unit,
+    rating: randomFloat(3, 5, 1),
+    numRatings: randomInt(5, 340),
+    stock,
+    tags,
+    region,
+    type,
+    seller: {
+      name: randomOf(SELLER_NAMES),
+      region: sellerRegion,
+      verified: tags.includes('Verified') || Math.random() > 0.75,
+    },
+    shippingDays: [shippingMin, shippingMax],
+    imageColor: [
+      'bg-green-200',
+      'bg-yellow-200',
+      'bg-orange-200',
+      'bg-amber-200',
+      'bg-lime-200',
+      'bg-rose-200',
+      'bg-emerald-200',
+      'bg-pink-200',
+      'bg-cyan-200',
+      'bg-violet-200',
+      'bg-teal-200',
+      'bg-indigo-200',
+    ][i % 12],
+  };
+});
+
+// UTILITIES
+
+function debounce<T extends (...args: any[]) => any>(fn: T, ms: number) {
+  let timer: any;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+function classNames(...args: (string | boolean | undefined | null)[]) {
+  return args.filter(Boolean).join(' ');
+}
+function getStars(rating: number) {
+  const stars = [];
+  let curr = rating;
+  for (let i = 1; i <= 5; ++i) {
+    if (curr >= 1) {
+      stars.push('full');
+      curr -= 1;
+    } else if (curr >= 0.5) {
+      stars.push('half');
+      curr -= 0.5;
+    } else {
+      stars.push('empty');
+    }
+  }
+  return stars;
+}
+
+function plural(n: number, singular: string, plural?: string) {
+  return n === 1 ? singular : plural ?? singular + 's';
+}
+
+// CART
+
+type CartItem = {
+  id: string;
+  name: string;
+  price: number;
+  unit: string;
+  quantity: number;
+  stock: number;
+};
+
+function useCart(): [
+  CartItem[],
+  {
+    add: (product: Product, qty: number) => void;
+    remove: (id: string) => void;
+    clear: () => void;
+    updateQty: (id: string, qty: number) => void;
+  },
+] {
+  const [cart, setCart] = useState<CartItem[]>([]);
+
+  // SSR guard
+  const isClient = typeof window !== 'undefined';
+
+  // Init from localStorage
+  useEffect(() => {
+    if (!isClient) return;
+    try {
+      const stored = localStorage.getItem('scart');
+      if (stored) setCart(JSON.parse(stored));
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+    localStorage.setItem('scart', JSON.stringify(cart));
+  }, [cart, isClient]);
+
+  const add = useCallback((product: Product, qty: number) => {
+    setCart((prev) => {
+      const exists = prev.find((c) => c.id === product.id);
+      if (exists) {
+        return prev.map((c) =>
+          c.id === product.id
+            ? {
+                ...c,
+                quantity: Math.min(
+                  c.quantity + qty,
+                  product.stock > 0 ? product.stock : c.quantity,
+                ),
+              }
+            : c,
+        );
+      }
+      return [
+        ...prev,
+        {
+          id: product.id,
+          name: product.name,
+          unit: product.unit,
+          price: product.price,
+          quantity: Math.min(qty, product.stock),
+          stock: product.stock,
+        },
+      ];
+    });
+  }, []);
+
+  const remove = useCallback((id: string) => {
+    setCart((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const clear = useCallback(() => setCart([]), []);
+
+  const updateQty = useCallback((id: string, qty: number) => {
+    setCart((prev) =>
+      prev.map((c) =>
+        c.id === id ? { ...c, quantity: Math.max(1, Math.min(qty, c.stock)) } : c,
+      ),
+    );
+  }, []);
+
+  return [cart, { add, remove, clear, updateQty }];
+}
+
+// FILTERS
+
+type Filters = {
+  priceMin: string;
+  priceMax: string;
+  rating: number;
+  inStock: boolean;
+  regions: Region[];
+  types: ProductType[];
+  tags: Tag[];
+};
+
+function defaultFilters(): Filters {
+  return {
+    priceMin: '',
+    priceMax: '',
+    rating: 0,
+    inStock: false,
+    regions: [],
+    types: [],
+    tags: [],
+  };
+}
+
+// MAIN PAGE
+
+export default function MarketplacePage() {
+  // State
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [filters, setFilters] = useState<Filters>(defaultFilters());
+  const [drawerFilters, setDrawerFilters] = useState<Filters>(defaultFilters());
+  const [sort, setSort] = useState<SortOption>('Relevance');
+  const [category, setCategory] = useState<string>('All');
+  const [cartOpen, setCartOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalProduct, setModalProduct] = useState<Product | null>(null);
+  const [showFilterDrawer, setShowFilterDrawer] = useState(false);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const [cart, cartActions] = useCart();
+
+  // Debounced search
+  const debouncedSetSearch = useMemo(
+    () =>
+      debounce((val: string) => {
+        setSearch(val);
+      }, 250),
+    [],
+  );
+
+  // Search input handler
+  const handleSearchInput = (e: ChangeEvent<HTMLInputElement>) => {
+    setSearchInput(e.target.value);
+    debouncedSetSearch(e.target.value);
+  };
+
+  // Drawing filter state (sidebar/drawer)
+  function handleFilterChange(fn: (f: Filters) => Filters) {
+    setDrawerFilters((f) => fn(f));
+  }
+
+  function applyFilters() {
+    setFilters(drawerFilters);
+    setShowFilterDrawer(false);
+  }
+  function resetFilters() {
+    setDrawerFilters(defaultFilters());
+    setFilters(defaultFilters());
+    setCategory('All');
+  }
+
+  // Resets page on filters/search/sort/category change
+  useEffect(() => {
+    setPage(1);
+  }, [filters, search, sort, category]);
+
+  // Desktop sidebar uses live filters, mobile uses Apply
+  useEffect(() => {
+    if (!showFilterDrawer) setDrawerFilters(filters);
+  }, [filters, showFilterDrawer]);
+
+  // Modal accessibility: focus on open
+  const modalInitialFocusRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (modalOpen && modalInitialFocusRef.current) {
+      modalInitialFocusRef.current.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen]);
+
+  // Keyboard close modal
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (modalOpen && e.key === 'Escape') {
+        setModalOpen(false);
+      }
+    }
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [modalOpen]);
+
+  // Loading state on search/filter/sort/category change
+  const [displayedProducts, setDisplayedProducts] = useState<Product[]>([]);
+  const [displayedTotal, setDisplayedTotal] = useState(0);
+
+  // All filtering and sorting
+  const filtered = useMemo(() => {
+    let prods = [...PRODUCT_DATA];
+
+    // Category
+    if (category !== 'All') prods = prods.filter((p) => p.type === category);
+
+    // Search (case-insensitive in name, then in description/region/type)
+    const searchLower = search.trim().toLowerCase();
+    if (searchLower) {
+      prods = prods.filter((p) => {
+        return (
+          p.name.toLowerCase().includes(searchLower) ||
+          p.description.toLowerCase().includes(searchLower) ||
+          p.region.toLowerCase().includes(searchLower) ||
+          p.type.toLowerCase().includes(searchLower)
+        );
+      });
+    }
+
+    // Price range
+    const min = parseFloat(filters.priceMin) || 0;
+    const max = parseFloat(filters.priceMax);
+    prods = prods.filter((p) => {
+      if (!isNaN(max)) {
+        if (p.price > max) return false;
+      }
+      if (!isNaN(min)) {
+        if (p.price < min) return false;
+      }
+      return true;
+    });
+
+    // Rating
+    if (filters.rating > 0)
+      prods = prods.filter((p) => p.rating >= filters.rating);
+
+    // In stock
+    if (filters.inStock) prods = prods.filter((p) => p.stock > 0);
+
+    // Regions
+    if (filters.regions.length > 0)
+      prods = prods.filter((p) => filters.regions.includes(p.region));
+
+    // Types
+    if (filters.types.length > 0)
+      prods = prods.filter((p) => filters.types.includes(p.type));
+
+    // Tags
+    if (filters.tags.length > 0)
+      prods = prods.filter((p) =>
+        filters.tags.every((t) => p.tags.includes(t)),
+      );
+
+    // Sorting
+    prods = [...prods];
+    if (sort === 'Price: Low→High') {
+      prods.sort((a, b) => a.price - b.price);
+    } else if (sort === 'Price: High→Low') {
+      prods.sort((a, b) => b.price - a.price);
+    } else if (sort === 'Rating: High→Low') {
+      prods.sort((a, b) => b.rating - a.rating || b.numRatings - a.numRatings);
+    } else if (sort === 'Shipping: Fastest') {
+      prods.sort(
+        (a, b) =>
+          a.shippingDays[0] -
+          b.shippingDays[0] ||
+          a.shippingDays[1] -
+            b.shippingDays[1] ||
+          b.rating - a.rating,
+      );
+    } else {
+      // Relevance: title keyword, then Verified, then rating
+      prods.sort((a, b) => {
+        let scoreA = 0;
+        let scoreB = 0;
+        if (searchLower) {
+          scoreA += a.name.toLowerCase().includes(searchLower) ? 10 : 0;
+          scoreB += b.name.toLowerCase().includes(searchLower) ? 10 : 0;
+        }
+        scoreA += a.tags.includes('Verified') ? 2 : 0;
+        scoreB += b.tags.includes('Verified') ? 2 : 0;
+        scoreA += a.rating;
+        scoreB += b.rating;
+        return scoreB - scoreA;
+      });
+    }
+
+    return prods;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, search, sort, category]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pagedProducts = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, page]);
+
+  // Loading effect for transforms
+  useEffect(() => {
+    setLoading(true);
+    const timeout = setTimeout(() => {
+      setDisplayedProducts(pagedProducts);
+      setDisplayedTotal(filtered.length);
+      setLoading(false);
+    }, filtered.length === 0 ? 320 : 430);
+    return () => clearTimeout(timeout);
+  }, [pagedProducts, filtered.length]);
+
+  // Filter chips construction
+  const chips: {
+    label: string;
+    type:
+      | 'price-min'
+      | 'price-max'
+      | 'rating'
+      | 'inStock'
+      | 'region'
+      | 'type'
+      | 'tag';
+    value: any;
+  }[] = [];
+  if (filters.priceMin)
+    chips.push({
+      label: `Min $${filters.priceMin}`,
+      type: 'price-min',
+      value: filters.priceMin,
+    });
+  if (filters.priceMax)
+    chips.push({
+      label: `Max $${filters.priceMax}`,
+      type: 'price-max',
+      value: filters.priceMax,
+    });
+  if (filters.rating)
+    chips.push({
+      label: `≥ ${filters.rating}★`,
+      type: 'rating',
+      value: filters.rating,
+    });
+  if (filters.inStock)
+    chips.push({
+      label: 'In Stock Only',
+      type: 'inStock',
+      value: true,
+    });
+  if (filters.regions.length)
+    chips.push(
+      ...filters.regions.map((v) => ({
+        label: v,
+        type: 'region',
+        value: v,
+      })),
+    );
+  if (filters.types.length)
+    chips.push(
+      ...filters.types.map((v) => ({
+        label: v,
+        type: 'type',
+        value: v,
+      })),
+    );
+  if (filters.tags.length)
+    chips.push(
+      ...filters.tags.map((v) => ({
+        label: v,
+        type: 'tag',
+        value: v,
+      })),
+    );
+
+  // Remove chip
+  function removeChip(idx: number) {
+    const chip = chips[idx];
+    setFilters((f) => {
+      const n = { ...f };
+      switch (chip.type) {
+        case 'price-min':
+          n.priceMin = '';
+          break;
+        case 'price-max':
+          n.priceMax = '';
+          break;
+        case 'rating':
+          n.rating = 0;
+          break;
+        case 'inStock':
+          n.inStock = false;
+          break;
+        case 'region':
+          n.regions = f.regions.filter((v) => v !== chip.value);
+          break;
+        case 'type':
+          n.types = f.types.filter((v) => v !== chip.value);
+          break;
+        case 'tag':
+          n.tags = f.tags.filter((v) => v !== chip.value);
+          break;
+      }
+      return n;
+    });
+  }
+
+  // HANDLERS
+
+  function openProductModal(prod: Product) {
+    setModalProduct(prod);
+    setModalOpen(true);
+  }
+
+  function closeProductModal() {
+    setModalOpen(false);
+    setTimeout(() => setModalProduct(null), 200);
+  }
+
+  function openCart() {
+    setCartOpen(true);
+  }
+  function closeCart() {
+    setCartOpen(false);
+  }
+
+  // PRODUCT DETAILS MODAL: Accessibility focus handling
+  const lastActiveElementRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (modalOpen) {
+      lastActiveElementRef.current =
+        (document.activeElement as HTMLElement) || null;
+      setTimeout(() => {
+        if (modalInitialFocusRef.current) {
+          modalInitialFocusRef.current.focus();
+        }
+      }, 30);
+    } else if (
+      lastActiveElementRef.current &&
+      typeof lastActiveElementRef.current.focus === 'function'
+    ) {
+      setTimeout(() => lastActiveElementRef.current?.focus(), 30);
+    }
+  }, [modalOpen]);
+
+  // RENDER
+
+  // -- COMPONENTS --
+  // Internal components are defined below for clarity.
+
+  return (
+    <div className="min-h-screen bg-neutral-50 flex flex-col">
+      {/* HEADER */}
+      <MarketplaceHeader
+        searchValue={searchInput}
+        onSearchInput={handleSearchInput}
+        category={category}
+        setCategory={setCategory}
+        categories={CATEGORIES}
+        sort={sort}
+        setSort={setSort}
+        onCartClick={openCart}
+        cartCount={cart.reduce((a, c) => a + c.quantity, 0)}
+      />
+      {/* CONTENT */}
+      <main className="flex-1 w-full max-w-[1340px] mx-auto flex gap-6 pt-24 md:pt-28 px-2 sm:px-4">
+        {/* Sidebar (Filters) - desktop */}
+        <aside className="hidden md:block w-64 pt-2">
+          <FilterSidebar
+            filters={drawerFilters}
+            setFilters={setDrawerFilters}
+            liveApply={() => setFilters(drawerFilters)}
+            resetFilters={resetFilters}
+          />
+        </aside>
+        {/* Mobile Filter Drawer */}
+        <FilterDrawer
+          open={showFilterDrawer}
+          onClose={() => setShowFilterDrawer(false)}
+        >
+          <FilterSidebar
+            filters={drawerFilters}
+            setFilters={setDrawerFilters}
+            liveApply={applyFilters}
+            resetFilters={resetFilters}
+            isMobile
+            onCloseDrawer={() => setShowFilterDrawer(false)}
+          />
+        </FilterDrawer>
+        {/* Main catalog area */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* Chips */}
+          {chips.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {chips.map((chip, i) => (
+                <FilterChip
+                  key={i}
+                  label={chip.label}
+                  onRemove={() => removeChip(i)}
+                />
+              ))}
+              <button
+                className="ml-auto text-xs px-2 h-7 rounded border border-neutral-300 hover:bg-neutral-100 transition"
+                onClick={resetFilters}
+                aria-label="Clear all filters"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+          {/* Catalog header */}
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <div className="text-sm text-neutral-600 font-medium select-none">
+              {loading ? (
+                <Skeleton className="h-5 w-20" />
+              ) : displayedTotal === 0 ? (
+                'No results'
+              ) : (
+                `${displayedTotal} result${displayedTotal === 1 ? '' : 's'}`
+              )}
+            </div>
+            <div className="md:hidden flex gap-2">
+              <button
+                className="inline-flex items-center py-1.5 px-4 bg-white border border-neutral-300 rounded shadow-sm hover:bg-neutral-100 text-sm"
+                onClick={() => setShowFilterDrawer(true)}
+                aria-label="Show filters"
+              >
+                <svg
+                  className="w-5 h-5 mr-1.5 text-neutral-500"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M3 4h18M6 12h12M9 20h6"
+                  />
+                </svg>
+                Filters
+              </button>
+            </div>
+            <div className="flex-1" />
+            <span className="inline-flex items-center text-xs text-neutral-500 mr-2">
+              Sort:
+              <span className="font-medium ml-1">{sort}</span>
+            </span>
+          </div>
+          {/* Catalog grid */}
+          {loading ? (
+            <div className="min-h-[400px] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+              {Array.from({ length: PAGE_SIZE }).map((_, i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : displayedTotal === 0 ? (
+            <div className="flex flex-col items-center mt-20 gap-4">
+              <EmptyStateIllustration />
+              <p className="text-lg font-medium text-neutral-700">
+                No products found
+              </p>
+              <button
+                className="px-4 py-2 bg-neutral-700 text-white font-medium rounded shadow hover:bg-neutral-900 transition"
+                onClick={resetFilters}
+              >
+                Reset filters
+              </button>
+            </div>
+          ) : (
+            <div
+              className={classNames(
+                'grid gap-4 min-h-[320px]',
+                'grid-cols-1',
+                'sm:grid-cols-2',
+                'lg:grid-cols-3',
+                '2xl:grid-cols-4',
+              )}
+            >
+              {displayedProducts.map((prod) => (
+                <ProductCard
+                  key={prod.id}
+                  product={prod}
+                  onClick={() => openProductModal(prod)}
+                  onAddToCart={() => cartActions.add(prod, 1)}
+                />
+              ))}
+            </div>
+          )}
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center py-5 gap-2 select-none">
+              <button
+                className={classNames(
+                  'px-3 py-1 rounded transition border',
+                  page === 1
+                    ? 'text-neutral-300 border-neutral-200 cursor-not-allowed'
+                    : 'hover:bg-neutral-100 border-neutral-300 ',
+                )}
+                disabled={page === 1}
+                onClick={() => setPage(page - 1)}
+                aria-label="Previous page"
+              >
+                Prev
+              </button>
+              {Array.from({ length: totalPages }).map((_, i) => (
+                <button
+                  key={i}
+                  className={classNames(
+                    'px-3 py-1 rounded border',
+                    page === i + 1
+                      ? 'bg-neutral-800 text-white border-neutral-800'
+                      : 'hover:bg-neutral-100 border-neutral-300',
+                  )}
+                  onClick={() => setPage(i + 1)}
+                  aria-current={page === i + 1}
+                >
+                  {i + 1}
+                </button>
+              ))}
+              <button
+                className={classNames(
+                  'px-3 py-1 rounded transition border',
+                  page === totalPages
+                    ? 'text-neutral-300 border-neutral-200 cursor-not-allowed'
+                    : 'hover:bg-neutral-100 border-neutral-300 ',
+                )}
+                disabled={page === totalPages}
+                onClick={() => setPage(page + 1)}
+                aria-label="Next page"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+        {/* CART DRAWER */}
+        <CartDrawer
+          open={cartOpen}
+          onClose={closeCart}
+          cart={cart}
+          actions={cartActions}
+        />
+        {/* PRODUCT MODAL */}
+        <ProductModal
+          open={modalOpen}
+          product={modalProduct}
+          onClose={closeProductModal}
+          onAddToCart={(qty: number, prod: Product) => {
+            cartActions.add(prod, qty);
+            setModalOpen(false);
+            setTimeout(() => setModalProduct(null), 200);
+          }}
+          initialFocusRef={modalInitialFocusRef}
+          isAccessible
+        />
+      </main>
+      {/* FOOTER */}
+      <footer className="border-t border-neutral-200 py-6 mt-14 text-center text-xs text-neutral-400">
+        &copy; {new Date().getFullYear()} SunCulture Marketplace &mdash; Demo UI
+      </footer>
+    </div>
+  );
+}
+
+// ------------------ COMPONENTS ----------------------
+
+function MarketplaceHeader({
+  searchValue,
+  onSearchInput,
+  category,
+  setCategory,
+  categories,
+  sort,
+  setSort,
+  onCartClick,
+  cartCount,
+}: {
+  searchValue: string;
+  onSearchInput: (e: ChangeEvent<HTMLInputElement>) => void;
+  category: string;
+  setCategory: (c: string) => void;
+  categories: string[];
+  sort: SortOption;
+  setSort: (s: SortOption) => void;
+  onCartClick: () => void;
+  cartCount: number;
+}) {
+  return (
+    <header className="fixed top-0 left-0 right-0 z-30 shadow-sm bg-white border-b border-neutral-200 px-2 md:px-0 select-none">
+      <div className="max-w-[1340px] mx-auto py-2.5 md:py-3 flex items-center gap-4">
+        <span className="mr-2 md:mr-4 font-extrabold text-lg md:text-2xl text-emerald-700 tracking-tight flex items-center gap-2">
+          <span>
+            <svg
+              className="w-6 h-6 text-emerald-600"
+              fill="none"
+              viewBox="0 0 32 32"
+            >
+              <circle
+                cx={16}
+                cy={16}
+                r={13}
+                fill="currentColor"
+                className="text-emerald-200"
+              />
+              <path
+                d="M16 25c4 0 7-6 7-11s-3-7-7-7-7 3-7 7 3 11 7 11z"
+                fill="currentColor"
+                className="text-emerald-600"
+              />
+              <circle
+                cx={16}
+                cy={16}
+                r={2}
+                fill="currentColor"
+                className="text-emerald-800"
+              />
+            </svg>
+          </span>
+          SunCulture
+          <span className="hidden md:inline">Marketplace</span>
+        </span>
+        {/* Search center */}
+        <form
+          className="relative flex-1 max-w-lg"
+          onSubmit={(e) => e.preventDefault()}
+        >
+          <input
+            className="w-full h-10 px-4 pl-10 pr-14 rounded border border-neutral-300 outline-none transition focus:border-emerald-400 bg-neutral-50 shadow-inner placeholder-neutral-400"
+            placeholder="Search products, regions, sellers…"
+            type="search"
+            value={searchValue}
+            onChange={onSearchInput}
+            aria-label="Search"
+          />
+          <span className="absolute left-3 top-0 bottom-0 flex items-center">
+            <svg
+              className="w-5 h-5 text-neutral-400"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <circle
+                cx="11"
+                cy="11"
+                r="8"
+                stroke="currentColor"
+                className="text-neutral-300"
+                strokeWidth={2}
+                fill="none"
+              />
+              <path
+                d="M21 21l-3.7-3.7"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+        </form>
+        {/* Cat/Sort dropdowns + Cart (right) */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Dropdown
+            label={category || 'Category'}
+            value={category}
+            onChange={setCategory}
+            options={categories}
+            ariaLabel="Select category"
+            className="hidden sm:inline-block"
+          />
+          <Dropdown
+            label={sort}
+            value={sort}
+            onChange={setSort}
+            options={SORT_OPTIONS}
+            ariaLabel="Sort by"
+            className="hidden sm:inline-block"
+          />
+          <button
+            className="relative ml-1 h-10 w-11 rounded bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 flex items-center justify-center transition"
+            onClick={onCartClick}
+            aria-label="View Cart"
+            tabIndex={0}
+          >
+            <svg
+              className="w-6 h-6 text-emerald-700"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                d="M3 6h2l.4 2m0 0L7 17a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1.2-9H5.4zm10.6 7a2 2 0 1 1-4 0"
+                stroke="currentColor"
+                strokeWidth={2}
+                fill="none"
+              />
+            </svg>
+            {cartCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold border-2 border-white">
+                {cartCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Dropdown<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  ariaLabel,
+  className = '',
+}: {
+  label: string;
+  value: T;
+  onChange: (v: T) => void;
+  options: readonly T[] | T[];
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <label
+      className={classNames(
+        'relative',
+        className,
+      )}
+    >
+      <select
+        className="appearance-none bg-white border border-neutral-300 rounded h-10 px-3 pr-8 mr-1 text-sm min-w-[120px] hover:border-emerald-300 focus:border-emerald-400 outline-none transition"
+        value={value}
+        aria-label={ariaLabel}
+        onChange={(e) => onChange(e.target.value as T)}
+      >
+        {options.map((opt) => (
+          <option value={opt} key={opt}>
+            {opt}
+          </option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute right-4 top-0 bottom-0 flex items-center text-neutral-400">
+        <svg
+          className="w-4 h-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          strokeWidth={2}
+          stroke="currentColor"
+        >
+          <path
+            d="M6 10l6 6 6-6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    </label>
+  );
+}
+
+// --------------------- SIDEBAR FILTER --------------------
+
+function FilterSidebar({
+  filters,
+  setFilters,
+  liveApply,
+  resetFilters,
+  isMobile = false,
+  onCloseDrawer,
+}: {
+  filters: Filters;
+  setFilters: (f: Filters) => void;
+  liveApply: () => void;
+  resetFilters: () => void;
+  isMobile?: boolean;
+  onCloseDrawer?: () => void;
+}) {
+  function handleChange<K extends keyof Filters>(field: K, value: Filters[K]) {
+    setFilters({ ...filters, [field]: value });
+    if (!isMobile) {
+      liveApply();
+    }
+  }
+
+  function onCheckboxGroup<K extends keyof Filters>(
+    field: K,
+    value: any,
+    checked: boolean,
+  ) {
+    setFilters({
+      ...filters,
+      [field]: checked
+        ? // @ts-expect-error
+          [...(filters[field] as any[]), value]
+        : // @ts-expect-error
+          (filters[field] as any[]).filter((v: any) => v !== value),
+    });
+    if (!isMobile) {
+      liveApply();
+    }
+  }
+  return (
+    <div
+      className={classNames(
+        'bg-white border border-neutral-200 rounded-md shadow-md p-4 sticky top-24 md:min-w-[240px]',
+        isMobile && 'min-h-screen max-h-screen overflow-auto sticky top-0',
+      )}
+      aria-label="Filter products"
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <svg
+          className="w-5 h-5 text-emerald-500"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          viewBox="0 0 24 24"
+        >
+          <path d="M3 5h18M9 10h6M7 15h10" />
+        </svg>
+        <h2 className="font-semibold text-base text-neutral-700 mb-0">Filters</h2>
+        {isMobile && (
+          <button
+            className="ml-auto text-neutral-400 hover:text-neutral-600"
+            onClick={onCloseDrawer}
+            aria-label="Close drawer"
+            tabIndex={0}
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24">
+              <path
+                d="M18 6 6 18"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+              <path
+                d="M6 6l12 12"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        )}
+      </div>
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (isMobile) liveApply();
+        }}
+      >
+        {/* Price */}
+        <div>
+          <label className="block text-sm font-medium text-neutral-800 mb-1">
+            Price range ($)
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm focus:border-emerald-400 transition outline-none"
+              placeholder="Min"
+              value={filters.priceMin}
+              onChange={(e) =>
+                handleChange('priceMin', e.target.value.replace(/^0+/, ''))
+              }
+              onBlur={() => liveApply()}
+              inputMode="numeric"
+            />
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm focus:border-emerald-400 transition outline-none"
+              placeholder="Max"
+              value={filters.priceMax}
+              onChange={(e) =>
+                handleChange('priceMax', e.target.value.replace(/^0+/, ''))
+              }
+              onBlur={() => liveApply()}
+              inputMode="numeric"
+            />
+          </div>
+        </div>
+        {/* Rating */}
+        <div>
+          <label className="block text-sm font-medium text-neutral-800 mb-1">
+            Min. Rating
+          </label>
+          <select
+            className="w-full rounded border border-neutral-300 px-2 py-1 text-sm focus:border-emerald-400 transition"
+            value={filters.rating}
+            onChange={(e) => handleChange('rating', parseFloat(e.target.value))}
+          >
+            {RATING_FILTERS.map((r) => (
+              <option value={r.value} key={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {/* In Stock Toggle */}
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            className="accent-emerald-500 w-4 h-4"
+            id="in-stock"
+            checked={filters.inStock}
+            onChange={(e) => handleChange('inStock', e.target.checked)}
+          />
+          <label htmlFor="in-stock" className="text-sm text-neutral-700">
+            In stock only
+          </label>
+        </div>
+        {/* Region multi-select */}
+        <div>
+          <label className="block text-sm font-medium text-neutral-800 mb-1">
+            Region
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {REGIONS.map((region) => (
+              <label
+                key={region}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-neutral-200 select-none cursor-pointer hover:bg-neutral-100"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-emerald-500"
+                  checked={filters.regions.includes(region)}
+                  onChange={(e) =>
+                    onCheckboxGroup('regions', region, e.target.checked)
+                  }
+                />
+                {region}
+              </label>
+            ))}
+          </div>
+        </div>
+        {/* Product type multi-select */}
+        <div>
+          <label className="block text-sm font-medium text-neutral-800 mb-1">
+            Type
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {PRODUCT_TYPES.map((type) => (
+              <label
+                key={type}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-neutral-200 select-none cursor-pointer hover:bg-neutral-100"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-emerald-500"
+                  checked={filters.types.includes(type)}
+                  onChange={(e) =>
+                    onCheckboxGroup('types', type, e.target.checked)
+                  }
+                />
+                {type}
+              </label>
+            ))}
+          </div>
+        </div>
+        {/* Tags */}
+        <div>
+          <label className="block text-sm font-medium text-neutral-800 mb-1">
+            Badges
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {TAGS.map((tag) => (
+              <label
+                key={tag}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-neutral-200 select-none cursor-pointer hover:bg-neutral-100"
+              >
+                <input
+                  type="checkbox"
+                  className="accent-emerald-500"
+                  checked={filters.tags.includes(tag)}
+                  onChange={(e) =>
+                    onCheckboxGroup('tags', tag, e.target.checked)
+                  }
+                />
+                {tag}
+              </label>
+            ))}
+          </div>
+        </div>
+        {/* Buttons mobile */}
+        {isMobile && (
+          <div className="flex gap-2 mt-6">
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 rounded bg-emerald-700 text-white font-medium hover:bg-emerald-900 shadow"
+              tabIndex={0}
+            >
+              Apply
+            </button>
+            <button
+              type="button"
+              className="flex-1 px-4 py-2 rounded border border-neutral-300 text-neutral-900 hover:bg-neutral-100 shadow"
+              onClick={resetFilters}
+              tabIndex={0}
+            >
+              Reset
+            </button>
+          </div>
+        )}
+        {!isMobile && (
+          <button
+            type="button"
+            className="rounded mt-3 px-3 py-1.5 bg-neutral-200 hover:bg-neutral-300 text-xs font-medium transition"
+            onClick={resetFilters}
+            tabIndex={0}
+          >
+            Reset filters
+          </button>
+        )}
+      </form>
+    </div>
+  );
+}
+
+// -------- DRAWERS & MODALS ----------
+
+function FilterDrawer({
+  open,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (open && e.key === 'Escape') onClose();
+    }
+    if (open) window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+  return (
+    <div
+      className={classNames(
+        'md:hidden fixed inset-0 z-40 flex',
+        open ? '' : 'pointer-events-none',
+      )}
+      aria-modal={open}
+      role="dialog"
+      tabIndex={-1}
+      style={
+        open
+          ? { transition: 'background 180ms' }
+          : { pointerEvents: 'none', zIndex: -10 }
+      }
+    >
+      <div
+        className={classNames(
+          'fixed inset-0 bg-neutral-900/40 transition-opacity',
+          open ? 'opacity-100' : 'opacity-0',
+        )}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside
+        className={classNames(
+          'w-[74vw] max-w-xs min-h-full bg-white shadow-2xl px-1 py-2 border-r border-neutral-200 transition-transform duration-200',
+          open ? 'translate-x-0' : '-translate-x-full',
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </aside>
+    </div>
+  );
+}
+
+function CartDrawer({
+  open,
+  onClose,
+  cart,
+  actions,
+}: {
+  open: boolean;
+  onClose: () => void;
+  cart: CartItem[];
+  actions: {
+    add: (p: Product, qty: number) => void;
+    remove: (id: string) => void;
+    updateQty: (id: string, qty: number) => void;
+    clear: () => void;
+  };
+}) {
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  // Keyboard close: ESC
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (open && e.key === 'Escape') onClose();
+    }
+    if (open) window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+  return (
+    <div
+      className={classNames(
+        'fixed z-40 inset-0 flex justify-end',
+        open ? '' : 'pointer-events-none',
+      )}
+      aria-modal={open}
+      role="dialog"
+      tabIndex={-1}
+    >
+      <div
+        className={classNames(
+          'fixed inset-0 bg-neutral-900/30 transition-opacity duration-150',
+          open ? 'opacity-100' : 'opacity-0',
+        )}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside
+        className={classNames(
+          'w-[92vw] max-w-md min-h-full bg-white shadow-2xl px-4 py-3 border-l border-neutral-200 flex flex-col transition-transform duration-150',
+          open ? 'translate-x-0' : 'translate-x-full',
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center mb-3">
+          <h2 className="font-semibold text-lg text-emerald-800 flex-1">
+            Shopping Cart
+          </h2>
+          <button
+            className="text-neutral-500 hover:text-neutral-700"
+            onClick={onClose}
+            aria-label="Close cart"
+            tabIndex={0}
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24">
+              <path
+                d="M18 6 6 18"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+              <path
+                d="M6 6l12 12"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          {cart.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center">
+              <EmptyCartSVG />
+              <p className="text-neutral-500 mt-3 text-sm">
+                Your cart is empty.
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-neutral-200">
+              {cart.map((item) => (
+                <li key={item.id} className="py-3 flex gap-3 items-center">
+                  <div className="w-10 h-10 rounded bg-emerald-100 flex items-center justify-center font-bold text-emerald-600 text-lg border border-emerald-200">
+                    {item.name[0]}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-neutral-800">
+                      {item.name}
+                    </div>
+                    <div className="text-xs text-neutral-500">
+                      ${item.price.toFixed(2)} {item.unit}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-1 ml-auto pr-2">
+                    <button
+                      className="w-7 h-7 bg-neutral-200 hover:bg-neutral-300 rounded text-lg font-bold transition disabled:opacity-50"
+                      onClick={() =>
+                        actions.updateQty(item.id, Math.max(item.quantity - 1, 1))
+                      }
+                      disabled={item.quantity <= 1}
+                      aria-label="Decrease quantity"
+                    >
+                      –
+                    </button>
+                    <span className="px-2 text-sm font-mono min-w-[1.3ch] text-center select-none">{item.quantity}</span>
+                    <button
+                      className="w-7 h-7 bg-neutral-200 hover:bg-neutral-300 rounded text-lg font-bold transition disabled:opacity-50"
+                      onClick={() =>
+                        actions.updateQty(
+                          item.id,
+                          Math.min(item.quantity + 1, item.stock),
+                        )
+                      }
+                      disabled={item.quantity >= item.stock}
+                      aria-label="Increase quantity"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <button
+                    className="ml-2 text-xs text-neutral-400 hover:text-red-500 rounded"
+                    onClick={() => actions.remove(item.id)}
+                    aria-label="Remove item"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <path
+                        d="M18 6 6 18"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d="M6 6l12 12"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="border-t border-neutral-200 pt-3 pb-2">
+          <div className="flex justify-between items-center text-sm">
+            <span className="font-medium">Subtotal</span>
+            <span className="font-bold text-neutral-800">
+              ${subtotal.toFixed(2)}
+            </span>
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              className="flex-1 px-4 py-2 rounded bg-emerald-700 text-white font-semibold hover:bg-emerald-900 transition shadow"
+              onClick={() => {
+                // "Demo" checkout only
+                alert("Checkout is demo only");
+              }}
+              disabled={cart.length === 0}
+            >
+              Checkout
+            </button>
+            <button
+              className="flex-1 px-4 py-2 rounded border border-neutral-300 text-neutral-900 hover:bg-neutral-100 shadow"
+              onClick={actions.clear}
+              disabled={cart.length === 0}
+            >
+              Clear cart
+            </button>
+          </div>
+          <p className="text-xs text-emerald-700 mt-2 select-none">
+            <span className="font-bold">Note:</span> Demo only, no checkout performed.
+          </p>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+// --------- PRODUCT DETAILS MODAL -----------
+
+function ProductModal({
+  open,
+  product,
+  onClose,
+  onAddToCart,
+  initialFocusRef,
+  isAccessible,
+}: {
+  open: boolean;
+  product: Product | null;
+  onClose: () => void;
+  onAddToCart: (qty: number, prod: Product) => void;
+  initialFocusRef: React.RefObject<HTMLDivElement>;
+  isAccessible?: boolean;
+}) {
+  const [qty, setQty] = useState(1);
+
+  useEffect(() => {
+    setQty(1);
+  }, [product, open]);
+
+  if (!product) return null;
+  return (
+    <div
+      className={classNames(
+        'fixed inset-0 z-50 flex items-center justify-center transition duration-150',
+        open
+          ? 'bg-neutral-900/35 pointer-events-auto opacity-100'
+          : 'pointer-events-none opacity-0',
+      )}
+      tabIndex={-1}
+      aria-modal={open}
+      role="dialog"
+      onClick={onClose}
+      style={{ transition: 'background 180ms' }}
+    >
+      <div
+        tabIndex={0}
+        ref={initialFocusRef}
+        className={classNames(
+          'max-w-lg w-[96vw] bg-white rounded-xl shadow-2xl p-7 pt-6 relative transition-all duration-200 outline-none',
+          open
+            ? 'opacity-100 scale-100 translate-y-0'
+            : 'opacity-0 scale-95 translate-y-3',
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-600 rounded outline-none focus:ring-2 focus:ring-emerald-400"
+          onClick={onClose}
+          aria-label="Close"
+          tabIndex={0}
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24">
+            <path
+              d="M18 6 6 18"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+            <path
+              d="M6 6l12 12"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+        <div className="flex gap-4 mb-3">
+          <div
+            className={classNames(
+              'flex-shrink-0 w-24 h-24 rounded-xl',
+              product.imageColor,
+              'flex items-center justify-center text-4xl font-extrabold text-neutral-300 border border-neutral-200',
+            )}
+          >
+            {product.name[0]}
+          </div>
+          <div className="flex-1">
+            <h2 className="font-bold text-2xl text-neutral-900 mb-0.5">
+              {product.name}
+            </h2>
+            <div className="flex gap-1.5 items-center mb-1">
+              <span className="text-xs font-medium text-neutral-500">
+                {product.type}
+              </span>
+              <span className="w-1 h-1 rounded-full bg-neutral-300 inline-block mx-1"></span>
+              <span className="text-xs text-neutral-400">{product.region}</span>
+            </div>
+            <div className="flex gap-1 mt-1">
+              {product.tags.map((tag) => (
+                <ProductBadge key={tag} tag={tag} />
+              ))}
+              {product.seller.verified && (
+                <ProductBadge key='verified' tag="Verified" />
+              )}
+            </div>
+          </div>
+        </div>
+        <p className="mb-2 text-neutral-700 text-sm leading-relaxed">
+          {product.longDescription}
+        </p>
+        <div className="text-neutral-600 text-xs font-medium flex items-center gap-2 mb-3">
+          <svg
+            className="w-4 h-4 text-neutral-400"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            viewBox="0 0 24 24"
+          >
+            <path
+              d="M12 10v6m6-6v6m-12-6v6m3-3h0m6 0h0"
+              stroke="currentColor"
+              strokeWidth={2}
+            />
+            <rect
+              x={6}
+              y={3}
+              width={12}
+              height={6}
+              rx={2}
+              stroke="currentColor"
+              strokeWidth={2}
+            />
+          </svg>
+          Ships in {product.shippingDays[0]}–{product.shippingDays[1]} days
+        </div>
+        {/* Seller block */}
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-500 font-bold">
+            {product.seller.name[0]}
+          </div>
+          <div>
+            <div className="text-xs font-medium text-neutral-800">
+              {product.seller.name}
+              {product.seller.verified && (
+                <span className="ml-1 text-emerald-500 font-bold text-xs">
+                  ✓
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-neutral-500">{product.seller.region}</div>
+          </div>
+        </div>
+        <div className="mb-3">
+          <div className="flex items-center gap-2">
+            <Stars rating={product.rating} />
+            <span className="text-sm font-medium text-neutral-800 ml-0.5">
+              {product.rating.toFixed(1)}
+            </span>
+            <span className="text-xs text-neutral-400">
+              ({product.numRatings} {plural(product.numRatings, 'rating')})
+            </span>
+          </div>
+          <div className="mt-0.5 text-xs text-neutral-500">
+            Most buyers rate this product{' '}
+            {product.rating >= 4.7
+              ? 'excellent'
+              : product.rating >= 4
+              ? 'very good'
+              : product.rating >= 3.5
+              ? 'good'
+              : 'decent'}
+            .
+          </div>
+        </div>
+        {/* Price & stock */}
+        <div className="flex items-center gap-4 mb-5">
+          <span className="text-2xl font-bold text-neutral-900">
+            ${product.price.toFixed(2)}
+            <span className="text-xs font-normal text-neutral-400 ml-1">{product.unit}</span>
+          </span>
+          {product.stock > 0 ? (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-700 font-semibold rounded px-2 py-1 bg-emerald-50">
+              <svg
+                className="w-3.5 h-3.5 text-emerald-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <circle cx={10} cy={10} r={10} fill="currentColor" />
+              </svg>
+              In Stock
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-red-400 font-semibold rounded px-2 py-1 bg-red-50">
+              <svg
+                className="w-3.5 h-3.5 text-red-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <circle cx={10} cy={10} r={10} fill="currentColor" />
+              </svg>
+              Out of Stock
+            </span>
+          )}
+        </div>
+        {/* Add to cart */}
+        <form
+          className="flex gap-3 items-center"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (product.stock > 0) {
+              onAddToCart(qty, product);
+            }
+          }}
+        >
+          <label className="text-sm mr-1">Qty:</label>
+          <input
+            type="number"
+            min={1}
+            max={product.stock}
+            value={qty}
+            onChange={(e) =>
+              setQty(
+                Math.max(
+                  1,
+                  Math.min(product.stock, parseInt(e.target.value) || 1),
+                ),
+              )
+            }
+            className="w-14 rounded border border-neutral-300 px-2 py-1 text-sm focus:border-emerald-400 transition outline-none"
+            disabled={product.stock === 0}
+          />
+          <button
+            type="submit"
+            className="flex-1 px-4 py-2 rounded bg-emerald-700 text-white font-bold hover:bg-emerald-900 shadow transition disabled:opacity-60"
+            disabled={product.stock === 0 || qty > product.stock}
+          >
+            Add to Cart
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------- PRODUCT GRID -----------------------
+
+function ProductCard({
+  product,
+  onClick,
+  onAddToCart,
+}: {
+  product: Product;
+  onClick: () => void;
+  onAddToCart: () => void;
+}) {
+  return (
+    <article
+      className="relative bg-white border border-neutral-200 rounded-xl overflow-hidden group shadow-sm hover:shadow-lg transition cursor-pointer flex flex-col"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick();
+      }}
+      aria-label={`${product.name} details`}
+    >
+      {/* "Image" */}
+      <div
+        className={classNames(
+          'h-32 w-full',
+          product.imageColor,
+          'flex items-center justify-center text-4xl font-extrabold text-neutral-300 border-b border-neutral-200',
+        )}
+      >
+        {product.name[0]}
+      </div>
+      <div className="flex-1 flex flex-col px-3 pt-2 pb-3">
+        <div className="flex items-center mb-0.5 gap-2 flex-wrap">
+          <span className="inline text-xs font-bold text-neutral-800">
+            {product.name}
+          </span>
+          <span className="text-xs text-neutral-500 ml-auto">{product.type}</span>
+        </div>
+        <div className="text-sm text-neutral-500 truncate">
+          {product.description}
+        </div>
+        <div className="flex gap-2 my-1 text-xs">
+          <span className="inline-flex items-center px-1.5 rounded bg-neutral-100 text-neutral-700 font-semibold">
+            {product.region}
+          </span>
+          <span className="inline-flex items-center px-1.5 rounded bg-neutral-50 text-neutral-600">
+            {product.seller.name}
+            {product.seller.verified && (
+              <svg
+                className="w-3 h-3 text-emerald-400 ml-1"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <circle cx={10} cy={10} r={10} fill="currentColor" />
+              </svg>
+            )}
+          </span>
+        </div>
+        <div className="flex gap-1 mb-1">
+          <Stars rating={product.rating} small />
+        </div>
+        <div className="flex gap-1 flex-wrap mb-1.5">
+          {product.tags.map((tag) => (
+            <ProductBadge key={tag} tag={tag} />
+          ))}
+        </div>
+        <div className="flex items-center gap-1 mt-auto mb-2">
+          <span className="text-lg font-bold text-neutral-900">
+            ${product.price.toFixed(2)}
+          </span>
+          <span className="text-xs text-neutral-400 ml-1 font-normal">
+            {product.unit}
+          </span>
+          {product.stock > 0 ? (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-700 rounded px-2 py-1">
+              <svg
+                className="w-2 h-2 text-emerald-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <circle cx={10} cy={10} r={10} fill="currentColor" />
+              </svg>
+              In Stock
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-red-400 rounded px-2 py-1">
+              <svg
+                className="w-2 h-2 text-red-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <circle cx={10} cy={10} r={10} fill="currentColor" />
+              </svg>
+              Out of Stock
+            </span>
+          )}
+        </div>
+        <button
+          className="block w-full bg-emerald-600 text-white font-semibold rounded py-1.5 hover:bg-emerald-800 transition mt-auto"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddToCart();
+          }}
+          disabled={product.stock === 0}
+          tabIndex={0}
+        >
+          Add to Cart
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function Stars({ rating, small = false }: { rating: number; small?: boolean }) {
+  const stars = getStars(rating);
+  return (
+    <span className="inline-flex" aria-label={`${rating.toFixed(1)} stars`}>
+      {stars.map((s, i) =>
+        s === 'full' ? (
+          <svg
+            key={i}
+            className={small ? 'w-3 h-3' : 'w-4 h-4'}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <polygon
+              points="10,2 12.59,7.14 18.2,7.64 14,11.99 15.18,17.51 10,14.59 4.82,17.51 6,11.99 1.8,7.64 7.41,7.14"
+            />
+          </svg>
+        ) : s === 'half' ? (
+          <svg
+            key={i}
+            className={small ? 'w-3 h-3' : 'w-4 h-4'}
+            fill="currentColor"
+            viewBox="0 0 20 20"
+          >
+            <defs>
+              <linearGradient id={`half${i}`} x1="0" x2="100%" y1="0" y2="0">
+                <stop offset="50%" stopColor="currentColor" />
+                <stop offset="50%" stopColor="#e5e7eb" />
+              </linearGradient>
+            </defs>
+            <polygon
+              points="10,2 12.59,7.14 18.2,7.64 14,11.99 15.18,17.51 10,14.59 4.82,17.51 6,11.99 1.8,7.64 7.41,7.14"
+              fill={`url(#half${i})`}
+            />
+          </svg>
+        ) : (
+          <svg
+            key={i}
+            className={small ? 'w-3 h-3' : 'w-4 h-4'}
+            fill="#e5e7eb"
+            viewBox="0 0 20 20"
+          >
+            <polygon
+              points="10,2 12.59,7.14 18.2,7.64 14,11.99 15.18,17.51 10,14.59 4.82,17.51 6,11.99 1.8,7.64 7.41,7.14"
+            />
+          </svg>
+        ),
+      )}
+    </span>
+  );
+}
+function ProductBadge({ tag }: { tag: Tag }) {
+  const style =
+    tag === 'Verified'
+      ? 'bg-emerald-100 text-emerald-700'
+      : tag === 'Organic'
+      ? 'bg-lime-100 text-lime-600'
+      : 'bg-cyan-100 text-cyan-700';
+  return (
+    <span
+      className={classNames(
+        'inline-flex items-center gap-1 text-xs font-semibold rounded px-1.5 py-0.5 border border-neutral-200',
+        style,
+      )}
+    >
+      {tag === 'Verified' && (
+        <svg
+          className="w-3 h-3 text-emerald-400"
+          fill="currentColor"
+          viewBox="0 0 18 18"
+        >
+          <circle cx={9} cy={9} r={9} fill="currentColor" />
+        </svg>
+      )}
+      {tag === 'Organic' && (
+        <svg
+          className="w-3 h-3 text-lime-400"
+          fill="currentColor"
+          viewBox="0 0 18 18"
+        >
+          <ellipse
+            cx={9}
+            cy={10}
+            rx={5}
+            ry={6}
+            fill="currentColor"
+            opacity="0.7"
+          />
+        </svg>
+      )}
+      {tag === 'Fast Dispatch' && (
+        <svg
+          className="w-3 h-3 text-cyan-400"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          viewBox="0 0 16 16"
+        >
+          <path d="M2 8h12M8 2l4 6-4 6" />
+        </svg>
+      )}
+      {tag}
+    </span>
+  );
+}
+
+function FilterChip({
+  label,
+  onRemove,
+}: {
+  label: string;
+  onRemove?: () => void;
+}) {
+  return (
+    <span className="inline-flex items-center bg-neutral-200 rounded-full px-3 py-1 text-xs font-medium text-neutral-800 mr-1 space-x-1">
+      <span>{label}</span>
+      {onRemove && (
+        <button
+          className="ml-1 text-neutral-500 hover:text-red-600"
+          onClick={onRemove}
+          aria-label="Remove"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 16 16">
+            <path
+              d="M12 4 4 12"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+            <path
+              d="M4 4l8 8"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      )}
+    </span>
+  );
+}
+
+/* SKELETONS & EMPTY */
+
+function Skeleton({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={classNames(
+        'animate-pulse bg-neutral-200 rounded',
+        className,
+      )}
+    />
+  );
+}
+function SkeletonCard() {
+  return (
+    <div className="bg-white border border-neutral-200 rounded-xl shadow-sm p-2 flex flex-col">
+      <Skeleton className="h-28 mb-3 rounded-lg" />
+      <Skeleton className="h-5 w-1/2 mb-2" />
+      <Skeleton className="h-4 w-3/4 mb-2" />
+      <Skeleton className="h-3 w-24 mb-2" />
+      <Skeleton className="h-4 w-1/4 mb-3" />
+      <div className="flex gap-2 mt-auto">
+        <Skeleton className="h-7 w-14" />
+        <Skeleton className="h-7 w-14" />
+      </div>
+    </div>
+  );
+}
+
+function EmptyStateIllustration() {
+  return (
+    <svg className="w-28 h-28" fill="none" viewBox="0 0 128 128">
+      <rect
+        x={7}
+        y={28}
+        width={114}
+        height={73}
+        rx={10}
+        fill="#e5e7eb"
+        stroke="#94a3b8"
+        strokeWidth={2}
+      />
+      <rect
+        x={16}
+        y={38}
+        width={96}
+        height={55}
+        rx={8}
+        fill="#f1f5f9"
+        stroke="#d1d5db"
+        strokeWidth={1}
+      />
+      <path
+        d="M16 82h96"
+        stroke="#d1d5db"
+        strokeWidth={1}
+        strokeDasharray="2 4"
+      />
+      <ellipse cx={40} cy={53} rx={7} ry={9} fill="#f59e42" />
+      <ellipse cx={77} cy={64} rx={12} ry={7} fill="#a7f3d0" />
+      <ellipse cx={101} cy={52} rx={4} ry={6} fill="#fbbf24" />
+    </svg>
+  );
+}
+
+function EmptyCartSVG() {
+  return (
+    <svg className="w-16 h-16 opacity-40" fill="none" viewBox="0 0 32 32">
+      <rect
+        x={4}
+        y={8}
+        width={24}
+        height={14}
+        rx={3}
+        fill="#f1f5f9"
+        stroke="#cbd5e1"
+        strokeWidth={2}
+      />
+      <ellipse cx={11} cy={25} rx={2} ry={2} fill="#a7f3d0" />
+      <ellipse cx={23} cy={25} rx={2} ry={2} fill="#a7f3d0" />
+      <rect
+        x={6}
+        y={11}
+        width={20}
+        height={7}
+        rx={2}
+        fill="#fde68a"
+        stroke="#eab308"
+        strokeWidth={1}
+      />
+      <rect
+        x={10}
+        y={13}
+        width={4}
+        height={3}
+        rx={1}
+        fill="#f59e42"
+        stroke="#ea580c"
+        strokeWidth={0.8}
+      />
+      <rect
+        x={18}
+        y={13}
+        width={4}
+        height={3}
+        rx={1}
+        fill="#a7f3d0"
+        stroke="#10b981"
+        strokeWidth={0.8}
+      />
+    </svg>
+  );
+}
